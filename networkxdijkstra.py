@@ -1,11 +1,8 @@
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
-import math
-from collections import OrderedDict, deque
 
-
-class Network:
+class Primary:
     def __init__(self, size):
         self.columns = size
         self.rows = size
@@ -14,8 +11,8 @@ class Network:
         self.fill_network(size)
 
         self.G = nx.from_numpy_matrix(self.network)
-
-        self.nodes = np.empty(size, dtype=object)
+        self.primary = dict(nx.all_pairs_dijkstra(self.G))
+        self.alternate = {}
 
     def fill_network(self, size):
         columns = size
@@ -27,6 +24,26 @@ class Network:
                 self.network[row, column] = link_weight
                 self.network[column, row] = link_weight
             mincolumn += 1
+
+    # https://gist.github.com/krisprice/31eda711ebd5015396c72e9d29ab0c60
+    def apply_ecmp_flow(self, source, destination):
+        try:
+            paths = list(nx.all_shortest_paths(self.G, source, destination, weight='weight'))
+            num_ecmp_paths = len(paths)
+
+            for p in paths:
+                u = p[0]
+                for v in p[1:]:
+                    min_weight = min(d['weight'] for d in self.G[u][v].values())
+                    keys = [k for k, d in self.G[u][v].items() if d['weight'] == min_weight]
+                    num_ecmp_links = len(keys)
+
+                    # for k in keys:
+                    #     self.G[u][v][k]['total_utilization'] += load / num_ecmp_paths / num_ecmp_links
+                    u = v
+        except (KeyError, nx.NetworkXNoPath):
+            print("Error, no path for %s to %s in apply_ecmp_flow()" % (source, destination))
+            raise
 
     def print_network(self):
         print("  ", end='')
@@ -44,20 +61,42 @@ class Network:
         ### update this:
         color_changes = (self.network[0][1], self.network[0][2])
         # print("tuple:", color_changes)
-        #nx.draw_networkx_edges(self.G, edgelist=([color_changes]),pos=layout, edge_color='r')
+        # nx.draw_networkx_edges(self.G, edgelist=([color_changes]),pos=layout, edge_color='r')
         nx.draw_networkx_edge_labels(self.G, pos=layout, edge_labels=labels)
         plt.show()
-    def shortest_paths(self):
-        len_path = dict(nx.all_pairs_dijkstra(self.G))
-        print(len_path)
-        # print(len_path[3][0][1])
-        # for node in [0, 1, 2, 3, 4]:
-        #     print('3 - {}: {}'.format(node, len_path[3][0][node]))
-        # print(len_path[3][1][1])
-        for n, (dist, path) in nx.all_pairs_dijkstra(self.G):
-            print(path[1])
 
-myNetwork = Network(size=5)
+    def alternate_next(self):
+        P_i = {"alt_next_hops": {}, "alt_link": False, "alt_node": False} #Primary next hops, default
+        H_i = {"cand_type": "Loop-free", "cand_link_protect": False, "cand_node_protect": False} #Alternate next hops, default
+
+        for start in self.rows:
+            self.alternate[start] = []
+            for destination in self.columns:
+                D_opt_S_D = self.primary[start][0][destination]
+                for alt_next_hop in self.network[0]:
+                    if alt_next_hop != self.primary[start][1][destination][1]:  # Step 2
+                        D_opt_H_D = self.primary[alt_next_hop][0][destination]
+                        D_opt_H_S = self.primary[alt_next_hop][0][start]
+                        if D_opt_H_D <= D_opt_H_S + D_opt_S_D:  # Step 4, Step 3 is assumed
+                            candidate = H_i  # Step 5, H_i is loop free by default,
+                            # Step 6 Omitted
+                            # Step 7 Omitted
+                            for primary in self.primary[start][1][destination]:
+                                D_opt_H_P = self.primary[alt_next_hop][0][primary]
+                                D_opt_P_D = self.primary[primary][0][destination]
+                                if D_opt_H_D < D_opt_H_P + D_opt_P_D:
+                                    candidate.cand_node_protect = True  # Step 8
+                                    # Step 9 Omitted
+                                    # Step 10 Omitted
+                                    # Step 11 ???
+                                    # self.primary[]
+
+                                # if D_opt_H_D
+
+myNetwork = Primary(size=8)
 myNetwork.print_network()
 myNetwork.plot_network()
-myNetwork.shortest_paths()
+
+print(myNetwork.primary[2])
+
+myNetwork.apply_ecmp_flow(1,2)
