@@ -72,24 +72,25 @@ class Primary:
         for start in self.rows:
             self.alternate[start] = []
             for destination in self.columns:
-                D_opt_S_D = self.primary[start][0][destination]
-                for alt_next_hop in self.network[0]:
-                    if alt_next_hop != self.primary[start][1][destination][1]:  # Step 2
-                        D_opt_H_D = self.primary[alt_next_hop][0][destination]
-                        D_opt_H_S = self.primary[alt_next_hop][0][start]
+                D_opt_S_D = self.primary[start][0][destination]    # Ideal distance from start to dest according to Dijkstra
+                for alt_next_hop in self.G.neighbors(start): # Looping through each neighbor
+                    primary_next_hop = self.primary[start][1][destination][1]
+                    if alt_next_hop != primary_next_hop:  # Step 2
+                        D_opt_H_D = self.primary[alt_next_hop][0][destination]  # Ideal distance from neighbor to destination
+                        D_opt_H_S = self.primary[alt_next_hop][0][start]  # Distance from neighbor to start
                         if D_opt_H_D <= D_opt_H_S + D_opt_S_D:  # Step 4, Step 3 is assumed
                             candidate = H_i  # Step 5, H_i is loop free by default,
-                            # Step 6 Omitted
-                            # Step 7 Omitted
-                            for primary in self.primary[start][1][destination]:
-                                D_opt_H_P = self.primary[alt_next_hop][0][primary]
-                                D_opt_P_D = self.primary[primary][0][destination]
-                                if D_opt_H_D < D_opt_H_P + D_opt_P_D:
-                                    candidate.cand_node_protect = True  # Step 8
-                                    # Step 9 Omitted
-                                    # Step 10 Omitted
-                                    # Step 11 ???
-                                    # self.primary[]
+                            # Step 6 Omitted because ECMP not implemented yet
+                            # Step 7 Omitted               "
+                            # for primary in self.primary[start][1][destination]:
+                            D_opt_H_P = self.primary[alt_next_hop][0][primary_next_hop]
+                            D_opt_P_D = self.primary[primary_next_hop][0][destination]
+                            if D_opt_H_D < D_opt_H_P + D_opt_P_D:
+                                candidate["cand_node_protect"] = True  # Step 8
+                                # Step 9 Omitted because SRLG not considered
+                                # Step 10 Omitted
+                                # Step 11 ???
+                                # self.primary[]
 
                                 # if D_opt_H_D
 
