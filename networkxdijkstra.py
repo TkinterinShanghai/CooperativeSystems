@@ -2,7 +2,6 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import math
-from collections import OrderedDict, deque
 
 class Primary:
     def __init__(self, size):
@@ -18,15 +17,25 @@ class Primary:
         self.alternate = {}
 
     def fill_network(self, size):
-        columns = size
-        rows = size
-        mincolumn = 1
-        for row in range(rows):
-            for column in range(mincolumn, columns):
-                link_weight = np.random.choice([0, np.random.randint(1, 10)], p=[0.5, 0.5])
-                self.network[row, column] = link_weight
-                self.network[column, row] = link_weight
-            mincolumn += 1
+        # columns = size
+        # rows = size
+        # mincolumn = 1
+        # for row in range(rows):
+        #     for column in range(mincolumn, columns):
+        #         link_weight = np.random.choice([0, np.random.randint(1, 10)], p=[0.5, 0.5])
+        #         self.network[row, column] = link_weight
+        #         self.network[column, row] = link_weight
+        #     mincolumn += 1
+        self.network[0] = [0, 0, 0, 1, 0, 2, 5, 0, 4]
+        self.network[1] = [0, 0, 0, 8, 0, 0, 3, 0, 0]
+        self.network[2] = [0, 0, 0, 2, 1, 5, 0, 6, 1]
+        self.network[3] = [1, 8, 2, 0, 4, 9, 4, 3, 2]
+        self.network[4] = [0, 0, 1, 4, 0, 8, 0, 0, 0]
+        self.network[5] = [2, 0, 5, 9, 8, 0, 0, 0, 3]
+        self.network[6] = [5, 3, 0, 4, 0, 0, 0, 0, 0]
+        self.network[7] = [0, 0, 6, 3, 0, 0, 0, 0, 0]
+        self.network[8] = [4, 0, 1, 2, 0, 3, 0, 0, 0]
+
 
     def print_network(self):
         print("  ", end='')
@@ -60,14 +69,14 @@ class Primary:
                     continue
                 next_hop = P_i.copy()
                 D_opt_S_D = self.primary[start][0][destination]    # Ideal distance from start to dest according to Dijkstra
+                primary_next_hop = self.primary[start][1][destination][1]
                 for alt_next_hop in self.G.neighbors(start): # Looping through each neighbor
-                    primary_next_hop = self.primary[start][1][destination][1]
                     if alt_next_hop != primary_next_hop:  # Step 2
                         D_opt_H_D = self.primary[alt_next_hop][0][destination]  # Ideal distance from neighbor to destination
                         D_opt_H_S = self.primary[alt_next_hop][0][start]  # Distance from neighbor to start
                         if D_opt_H_D < D_opt_H_S + D_opt_S_D:  # Step 4, Step 3 is assumed
                             candidate = H_i.copy()  # Step 5, H_i is loop free by default,
-                            if D_opt_H_S + D_opt_H_D == D_opt_S_D:
+                            if self.network[start][alt_next_hop] + D_opt_H_D == D_opt_S_D:
                                 candidate["cand_type"] = "Primary"  # Step 6
                             candidate["cand_link_protect"] = True  # Step 7, no shared links, so if-statement always satisfied
                             D_opt_H_P = self.primary[alt_next_hop][0][primary_next_hop]
@@ -130,4 +139,5 @@ for start, alt_next_hops in myNetwork.alternate.items():
     for destination, alt_next_hop in alt_next_hops.items():
         print(f"{destination}: {alt_next_hop}")
 
-print(myNetwork.primary)
+for num in range(myNetwork.rows):
+    print(myNetwork.primary[num])
