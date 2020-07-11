@@ -1,3 +1,9 @@
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
+import math
+from collections import OrderedDict, deque
+
 class Primary:
     def __init__(self, size):
         self.columns = size
@@ -82,7 +88,7 @@ class Primary:
                             # Step 14 Omitted because SRLG not considered
                             # Step 15 Omitted because SRLG not considered
                             D_opt_ALT_D = self.primary[next_hop["alt_next_hop"]][0][destination]
-                            if D_opt_H_D < D_opt_P_D and D_opt_ALT_d >= D_opt_P_D:  # Step 16
+                            if D_opt_H_D < D_opt_P_D and D_opt_ALT_D >= D_opt_P_D:  # Step 16
                                 next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
                                 next_hop["alt_type"] = candidate["cand_type"]
                                 next_hop["alt_node_protect"] = candidate["cand_node_protect"]
