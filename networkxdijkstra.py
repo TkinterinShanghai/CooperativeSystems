@@ -1,7 +1,3 @@
-import numpy as np
-import networkx as nx
-import matplotlib.pyplot as plt
-
 class Primary:
     def __init__(self, size):
         self.columns = size
@@ -25,26 +21,6 @@ class Primary:
                 self.network[column, row] = link_weight
             mincolumn += 1
 
-    # https://gist.github.com/krisprice/31eda711ebd5015396c72e9d29ab0c60
-    def apply_ecmp_flow(self, source, destination):
-        try:
-            paths = list(nx.all_shortest_paths(self.G, source, destination, weight='weight'))
-            num_ecmp_paths = len(paths)
-
-            for p in paths:
-                u = p[0]
-                for v in p[1:]:
-                    min_weight = min(d['weight'] for d in self.G[u][v].values())
-                    keys = [k for k, d in self.G[u][v].items() if d['weight'] == min_weight]
-                    num_ecmp_links = len(keys)
-
-                    # for k in keys:
-                    #     self.G[u][v][k]['total_utilization'] += load / num_ecmp_paths / num_ecmp_links
-                    u = v
-        except (KeyError, nx.NetworkXNoPath):
-            print("Error, no path for %s to %s in apply_ecmp_flow()" % (source, destination))
-            raise
-
     def print_network(self):
         print("  ", end='')
         for i in range(self.columns):
@@ -66,38 +42,59 @@ class Primary:
         plt.show()
 
     def alternate_next(self):
-        P_i = {"alt_next_hops": {}, "alt_link": False, "alt_node": False} #Primary next hops, default
+        P_i = {"alt_next_hops": {-1}, "alt_type": None, "alt_link_protect": False, "alt_node_protect": False} #Primary next hops, default
         H_i = {"cand_type": "Loop-free", "cand_link_protect": False, "cand_node_protect": False} #Alternate next hops, default
 
         for start in self.rows:
             self.alternate[start] = []
             for destination in self.columns:
+                if start == destination:
+                    continue
+                next_hop = P_i
                 D_opt_S_D = self.primary[start][0][destination]    # Ideal distance from start to dest according to Dijkstra
                 for alt_next_hop in self.G.neighbors(start): # Looping through each neighbor
                     primary_next_hop = self.primary[start][1][destination][1]
                     if alt_next_hop != primary_next_hop:  # Step 2
                         D_opt_H_D = self.primary[alt_next_hop][0][destination]  # Ideal distance from neighbor to destination
                         D_opt_H_S = self.primary[alt_next_hop][0][start]  # Distance from neighbor to start
-                        if D_opt_H_D <= D_opt_H_S + D_opt_S_D:  # Step 4, Step 3 is assumed
+                        if D_opt_H_D < D_opt_H_S + D_opt_S_D:  # Step 4, Step 3 is assumed
                             candidate = H_i  # Step 5, H_i is loop free by default,
-                            # Step 6 Omitted because ECMP not implemented yet
-                            # Step 7 Omitted               "
-                            # for primary in self.primary[start][1][destination]:
+                            if D_opt_H_S + D_opt_H_D == D_opt_S_D:
+                                candidate["cand_type"] = "Primary"  # Step 6
+                            # Step 7 Omitted because no shared link is implemented
                             D_opt_H_P = self.primary[alt_next_hop][0][primary_next_hop]
                             D_opt_P_D = self.primary[primary_next_hop][0][destination]
                             if D_opt_H_D < D_opt_H_P + D_opt_P_D:
                                 candidate["cand_node_protect"] = True  # Step 8
-                                # Step 9 Omitted because SRLG not considered
-                                # Step 10 Omitted
-                                # Step 11 ???
-                                # self.primary[]
+                            # Step 9 Omitted because SRLG not considered
+                            if candidate["cand_type"] == "Primary" and next_hop["alt_type"] != "Primary": # Step 10
+                                next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
+                                next_hop["alt_type"] = candidate["cand_type"]
+                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
+                                continue
+                            elif candidate["cand_type"] != "Primary" and next_hop["alt_type"] == "Primary":  # Step 11
+                                continue
+                            if candidate["cand_node_protect"] == True and next_hop["alt_node_protect"] == False: # Step 12
+                                next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
+                                next_hop["alt_type"] = candidate["cand_type"]
+                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
+                            # Step 13 Omitted because no shared link is implemented
+                            # Step 14 Omitted because SRLG not considered
+                            # Step 15 Omitted because SRLG not considered
+                            D_opt_ALT_D = self.primary[next_hop["alt_next_hop"]][0][destination]
+                            if D_opt_H_D < D_opt_P_D and D_opt_ALT_d >= D_opt_P_D:  # Step 16
+                                next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
+                                next_hop["alt_type"] = candidate["cand_type"]
+                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
+                            if D_opt_H_D <= D_opt_ALT_D:  # Step 17, if the distance from the candidate to destination is shorter than the alternate next hop, it is being preferred
+                                next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
+                                next_hop["alt_type"] = candidate["cand_type"]
+                                next_hop["alt_node_protect"] = candidate["cand_node_protect"] 
+                            # Step 18 Continue to next alt_next_hop
+                            # Step 19 
 
-                                # if D_opt_H_D
-
-myNetwork = Primary(size=8)
+myNetwork = Primary(size=9)
 myNetwork.print_network()
 myNetwork.plot_network()
 
-print(myNetwork.primary[2])
-
-myNetwork.apply_ecmp_flow(1,2)
+myNetwork.primary[2]
