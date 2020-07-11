@@ -14,6 +14,7 @@ class Primary:
 
         self.G = nx.from_numpy_matrix(self.network)
         self.primary = dict(nx.all_pairs_dijkstra(self.G))
+
         self.alternate = {}
 
     def fill_network(self, size):
@@ -48,15 +49,16 @@ class Primary:
         plt.show()
 
     def alternate_next(self):
-        P_i = {"alt_next_hops": {-1}, "alt_type": None, "alt_link_protect": False, "alt_node_protect": False} #Primary next hops, default
+        D_opt_ALT_D= math.inf
+        P_i = {"alt_next_hops": -1, "alt_type": None, "alt_link_protect": False, "alt_node_protect": False} #Primary next hops, default
         H_i = {"cand_type": "Loop-free", "cand_link_protect": False, "cand_node_protect": False} #Alternate next hops, default
 
-        for start in self.rows:
-            self.alternate[start] = []
-            for destination in self.columns:
+        for start in range(self.rows):
+            self.alternate[start] = {}
+            for destination in range(self.columns):
                 if start == destination:
                     continue
-                next_hop = P_i
+                next_hop = P_i.copy()
                 D_opt_S_D = self.primary[start][0][destination]    # Ideal distance from start to dest according to Dijkstra
                 for alt_next_hop in self.G.neighbors(start): # Looping through each neighbor
                     primary_next_hop = self.primary[start][1][destination][1]
@@ -64,43 +66,68 @@ class Primary:
                         D_opt_H_D = self.primary[alt_next_hop][0][destination]  # Ideal distance from neighbor to destination
                         D_opt_H_S = self.primary[alt_next_hop][0][start]  # Distance from neighbor to start
                         if D_opt_H_D < D_opt_H_S + D_opt_S_D:  # Step 4, Step 3 is assumed
-                            candidate = H_i  # Step 5, H_i is loop free by default,
+                            candidate = H_i.copy()  # Step 5, H_i is loop free by default,
                             if D_opt_H_S + D_opt_H_D == D_opt_S_D:
                                 candidate["cand_type"] = "Primary"  # Step 6
-                            # Step 7 Omitted because no shared link is implemented
+                            candidate["cand_link_protect"] = True  # Step 7, no shared links, so if-statement always satisfied
                             D_opt_H_P = self.primary[alt_next_hop][0][primary_next_hop]
                             D_opt_P_D = self.primary[primary_next_hop][0][destination]
                             if D_opt_H_D < D_opt_H_P + D_opt_P_D:
                                 candidate["cand_node_protect"] = True  # Step 8
                             # Step 9 Omitted because SRLG not considered
                             if candidate["cand_type"] == "Primary" and next_hop["alt_type"] != "Primary": # Step 10
-                                next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
+                                next_hop["alt_next_hops"] = alt_next_hop          # Step 20
                                 next_hop["alt_type"] = candidate["cand_type"]
                                 next_hop["alt_node_protect"] = candidate["cand_node_protect"]
+                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                D_opt_ALT_D = D_opt_H_D
                                 continue
                             elif candidate["cand_type"] != "Primary" and next_hop["alt_type"] == "Primary":  # Step 11
                                 continue
                             if candidate["cand_node_protect"] == True and next_hop["alt_node_protect"] == False: # Step 12
-                                next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
+                                next_hop["alt_next_hops"] = alt_next_hop          # Step 20
                                 next_hop["alt_type"] = candidate["cand_type"]
                                 next_hop["alt_node_protect"] = candidate["cand_node_protect"]
-                            # Step 13 Omitted because no shared link is implemented
+                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                D_opt_ALT_D = D_opt_H_D
+                                continue
+                            if candidate["cand_link_protect"] == True and next_hop["alt_link_protect"] == False:  # Step 13
+                                next_hop["alt_next_hops"] = alt_next_hop  # Step 20
+                                next_hop["alt_type"] = candidate["cand_type"]
+                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
+                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                D_opt_ALT_D = D_opt_H_D
+                                continue
                             # Step 14 Omitted because SRLG not considered
                             # Step 15 Omitted because SRLG not considered
-                            D_opt_ALT_D = self.primary[next_hop["alt_next_hop"]][0][destination]
                             if D_opt_H_D < D_opt_P_D and D_opt_ALT_D >= D_opt_P_D:  # Step 16
-                                next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
+                                next_hop["alt_next_hops"] = alt_next_hop          # Step 20
                                 next_hop["alt_type"] = candidate["cand_type"]
                                 next_hop["alt_node_protect"] = candidate["cand_node_protect"]
-                            if D_opt_H_D <= D_opt_ALT_D:  # Step 17, if the distance from the candidate to destination is shorter than the alternate next hop, it is being preferred
-                                next_hop["alt_next_hops"] = {alt_next_hop}          # Step 20
+                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                D_opt_ALT_D = D_opt_H_D
+                                continue
+                            if D_opt_H_D < D_opt_ALT_D:  # Step 17, if the distance from the candidate to destination is shorter than the alternate next hop, it is being preferred
+                                next_hop["alt_next_hops"] = alt_next_hop          # Step 20
                                 next_hop["alt_type"] = candidate["cand_type"]
-                                next_hop["alt_node_protect"] = candidate["cand_node_protect"] 
+                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
+                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                D_opt_ALT_D = D_opt_H_D
+                                continue
                             # Step 18 Continue to next alt_next_hop
                             # Step 19 
+                self.alternate[start][destination]= next_hop
+
 
 myNetwork = Primary(size=9)
 myNetwork.print_network()
 myNetwork.plot_network()
 
-myNetwork.primary[2]
+myNetwork.alternate_next()
+
+for start, alt_next_hops in myNetwork.alternate.items():
+    print(f"########{start}##########")
+    for destination, alt_next_hop in alt_next_hops.items():
+        print(f"{destination}: {alt_next_hop}")
+
+print(myNetwork.primary)
