@@ -15,6 +15,7 @@ class Primary:
         self.primary = dict(nx.all_pairs_dijkstra(self.G))
 
         self.alternate = {}
+        self.PQ_spaces = {}
 
     def fill_network(self, size):
         # columns = size
@@ -126,6 +127,30 @@ class Primary:
                             # Step 18 Continue to next alt_next_hop
                             # Step 19 
                 self.alternate[start][destination]= next_hop
+
+    def ti_lfa(self):
+        #         def includes_link(start, primary_next_hop, destination):
+        #             path_to_destination = set(self.primary[start][1][destination])
+        #             if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(map(str, path_to_destination)):
+        #                 return True
+        #             return False
+        for start in range(self.rows):
+            self.PQ_spaces[start] = {}
+            for destination in range(self.columns):
+                self.PQ_spaces[start][destination] = []
+                P_space = []
+                primary_next_hop = self.primary[start][1][destination][1]
+                for node in range(self.columns):
+                    path_to_node = set(self.primary[start][1][node])
+                    if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(map(str, path_to_node)):
+                        continue
+                    P_space.append(node)
+                for node in P_space:
+                    path_to_destination = set(self.primary[node][1][destination])
+                    if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(
+                            map(str, path_to_destination)):
+                        continue
+                    self.PQ_spaces[start][destination].append(node)
 
 
 myNetwork = Primary(size=9)
