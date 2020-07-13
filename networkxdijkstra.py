@@ -61,7 +61,7 @@ class Primary:
     def alternate_next(self):
         D_opt_ALT_D= math.inf
         P_i = {"alt_next_hops": -1, "alt_type": None, "alt_link_protect": False, "alt_node_protect": False} #Primary next hops, default
-        H_i = {"cand_type": "Loop-free", "cand_link_protect": False, "cand_node_protect": False} #Alternate next hops, default
+        H_i = {"cand_value": -1, "cand_type": "Loop-free", "cand_link_protect": False, "cand_node_protect": False} #Alternate next hops, default
 
         for start in range(self.rows):
             self.alternate[start] = {}
@@ -77,6 +77,7 @@ class Primary:
                         D_opt_H_S = self.primary[alt_next_hop][0][start]  # Distance from neighbor to start
                         if D_opt_H_D < D_opt_H_S + D_opt_S_D:  # Step 4, Step 3 is assumed
                             candidate = H_i.copy()  # Step 5, H_i is loop free by default,
+                            candidate["cand_value"] = alt_next_hop
                             if self.network[start][alt_next_hop] + D_opt_H_D == D_opt_S_D:
                                 candidate["cand_type"] = "Primary"  # Step 6
                             candidate["cand_link_protect"] = True  # Step 7, no shared links, so if-statement always satisfied
@@ -86,42 +87,27 @@ class Primary:
                                 candidate["cand_node_protect"] = True  # Step 8
                             # Step 9 Omitted because SRLG not considered
                             if candidate["cand_type"] == "Primary" and next_hop["alt_type"] != "Primary": # Step 10
-                                next_hop["alt_next_hops"] = alt_next_hop          # Step 20
-                                next_hop["alt_type"] = candidate["cand_type"]
-                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
-                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             elif candidate["cand_type"] != "Primary" and next_hop["alt_type"] == "Primary":  # Step 11
                                 continue
                             if candidate["cand_node_protect"] == True and next_hop["alt_node_protect"] == False: # Step 12
-                                next_hop["alt_next_hops"] = alt_next_hop          # Step 20
-                                next_hop["alt_type"] = candidate["cand_type"]
-                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
-                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             if candidate["cand_link_protect"] == True and next_hop["alt_link_protect"] == False:  # Step 13
-                                next_hop["alt_next_hops"] = alt_next_hop  # Step 20
-                                next_hop["alt_type"] = candidate["cand_type"]
-                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
-                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             # Step 14 Omitted because SRLG not considered
                             # Step 15 Omitted because SRLG not considered
                             if D_opt_H_D < D_opt_P_D and D_opt_ALT_D >= D_opt_P_D:  # Step 16
-                                next_hop["alt_next_hops"] = alt_next_hop          # Step 20
-                                next_hop["alt_type"] = candidate["cand_type"]
-                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
-                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             if D_opt_H_D < D_opt_ALT_D:  # Step 17, if the distance from the candidate to destination is shorter than the alternate next hop, it is being preferred
-                                next_hop["alt_next_hops"] = alt_next_hop          # Step 20
-                                next_hop["alt_type"] = candidate["cand_type"]
-                                next_hop["alt_node_protect"] = candidate["cand_node_protect"]
-                                next_hop["alt_link_protect"] = candidate["cand_link_protect"]
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             # Step 18 Continue to next alt_next_hop
