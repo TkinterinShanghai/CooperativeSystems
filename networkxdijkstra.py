@@ -18,24 +18,24 @@ class Primary:
         self.PQ_spaces = {}
 
     def fill_network(self, size):
-        # columns = size
-        # rows = size
-        # mincolumn = 1
-        # for row in range(rows):
-        #     for column in range(mincolumn, columns):
-        #         link_weight = np.random.choice([0, np.random.randint(1, 10)], p=[0.5, 0.5])
-        #         self.network[row, column] = link_weight
-        #         self.network[column, row] = link_weight
-        #     mincolumn += 1
-        self.network[0] = [0, 0, 0, 1, 0, 2, 5, 0, 4]
-        self.network[1] = [0, 0, 0, 8, 0, 0, 3, 0, 0]
-        self.network[2] = [0, 0, 0, 2, 1, 5, 0, 6, 1]
-        self.network[3] = [1, 8, 2, 0, 4, 9, 4, 3, 2]
-        self.network[4] = [0, 0, 1, 4, 0, 8, 0, 0, 0]
-        self.network[5] = [2, 0, 5, 9, 8, 0, 0, 0, 3]
-        self.network[6] = [5, 3, 0, 4, 0, 0, 0, 0, 0]
-        self.network[7] = [0, 0, 6, 3, 0, 0, 0, 0, 0]
-        self.network[8] = [4, 0, 1, 2, 0, 3, 0, 0, 0]
+        columns = size
+        rows = size
+        mincolumn = 1
+        for row in range(rows):
+            for column in range(mincolumn, columns):
+                link_weight = np.random.choice([0, np.random.randint(1, 10)], p=[0.5, 0.5])
+                self.network[row, column] = link_weight
+                self.network[column, row] = link_weight
+            mincolumn += 1
+        # self.network[0] = [0, 0, 0, 1, 0, 2, 5, 0, 4]
+        # self.network[1] = [0, 0, 0, 8, 0, 0, 3, 0, 0]
+        # self.network[2] = [0, 0, 0, 2, 1, 5, 0, 6, 1]
+        # self.network[3] = [1, 8, 2, 0, 4, 9, 4, 3, 2]
+        # self.network[4] = [0, 0, 1, 4, 0, 8, 0, 0, 0]
+        # self.network[5] = [2, 0, 5, 9, 8, 0, 0, 0, 3]
+        # self.network[6] = [5, 3, 0, 4, 0, 0, 0, 0, 0]
+        # self.network[7] = [0, 0, 6, 3, 0, 0, 0, 0, 0]
+        # self.network[8] = [4, 0, 1, 2, 0, 3, 0, 0, 0]
 
 
     def print_network(self):
@@ -58,7 +58,7 @@ class Primary:
         nx.draw_networkx_edge_labels(self.G, pos=layout, edge_labels=labels)
         plt.show()
 
-    def alternate_next(self):
+    def frr_lfa(self):
         D_opt_ALT_D= math.inf
         P_i = {"alt_next_hops": -1, "alt_type": None, "alt_link_protect": False, "alt_node_protect": False} #Primary next hops, default
         H_i = {"cand_value": -1, "cand_type": "Loop-free", "cand_link_protect": False, "cand_node_protect": False} #Alternate next hops, default
@@ -69,7 +69,10 @@ class Primary:
                 if start == destination:
                     continue
                 next_hop = P_i.copy()
-                D_opt_S_D = self.primary[start][0][destination]    # Ideal distance from start to dest according to Dijkstra
+                try:
+                    D_opt_S_D = self.primary[start][0][destination]    # Ideal distance from start to dest according to Dijkstra
+                except KeyError:  # Node is not connected to any other node in the network
+                    continue
                 primary_next_hop = self.primary[start][1][destination][1]
                 for alt_next_hop in self.G.neighbors(start): # Looping through each neighbor
                     if alt_next_hop != primary_next_hop:  # Step 2
@@ -115,24 +118,28 @@ class Primary:
                 self.alternate[start][destination]= next_hop
 
     def ti_lfa(self):
-        #         def includes_link(start, primary_next_hop, destination):
-        #             path_to_destination = set(self.primary[start][1][destination])
-        #             if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(map(str, path_to_destination)):
-        #                 return True
-        #             return False
         for start in range(self.rows):
             self.PQ_spaces[start] = {}
             for destination in range(self.columns):
+                if start == destination:
+                    continue
                 self.PQ_spaces[start][destination] = []
                 P_space = []
                 primary_next_hop = self.primary[start][1][destination][1]
+                distance_to_destination = self.primary[start][0][destination]
                 for node in range(self.columns):
-                    path_to_node = set(self.primary[start][1][node])
-                    if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(map(str, path_to_node)):
+                    path_to_node = self.primary[start][1][node][:2]
+                    if node == start:
                         continue
+                    if path_to_node == [start, primary_next_hop]:
+                        continue
+                    if self.primary[start][0][node] + self.primary[node][0][destination] == distance_to_destination:
+                        continue
+                    # if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(map(str, path_to_node)):
+                    #     continue
                     P_space.append(node)
                 for node in P_space:
-                    path_to_destination = set(self.primary[node][1][destination])
+                    path_to_destination = self.primary[node][1][destination]
                     if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(
                             map(str, path_to_destination)):
                         continue
@@ -143,7 +150,7 @@ myNetwork = Primary(size=9)
 myNetwork.print_network()
 myNetwork.plot_network()
 
-myNetwork.alternate_next()
+myNetwork.frr_lfa()
 
 for start, alt_next_hops in myNetwork.alternate.items():
     print(f"########{start}##########")
@@ -152,3 +159,10 @@ for start, alt_next_hops in myNetwork.alternate.items():
 
 for num in range(myNetwork.rows):
     print(myNetwork.primary[num])
+
+myNetwork.ti_lfa()
+
+for start, alt_next_hops in myNetwork.PQ_spaces.items():
+    print(f"########{start}##########")
+    for destination, alt_next_hop in alt_next_hops.items():
+        print(f"{destination}: {alt_next_hop}")
