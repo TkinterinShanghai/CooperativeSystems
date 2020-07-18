@@ -3,6 +3,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import math
 
+
 class Primary:
     def __init__(self, size):
         self.columns = size
@@ -14,8 +15,8 @@ class Primary:
         self.G = nx.from_numpy_matrix(self.network)
         self.primary = dict(nx.all_pairs_dijkstra(self.G))
 
-        self.alternate = {}
-        self.PQ_spaces = {}
+        self.lfa_frr_paths = {}
+        self.ti_lfa_paths = {}
 
     def fill_network(self, size):
         columns = size
@@ -27,16 +28,12 @@ class Primary:
                 self.network[row, column] = link_weight
                 self.network[column, row] = link_weight
             mincolumn += 1
-        # self.network[0] = [0, 0, 0, 1, 0, 2, 5, 0, 4]
-        # self.network[1] = [0, 0, 0, 8, 0, 0, 3, 0, 0]
-        # self.network[2] = [0, 0, 0, 2, 1, 5, 0, 6, 1]
-        # self.network[3] = [1, 8, 2, 0, 4, 9, 4, 3, 2]
-        # self.network[4] = [0, 0, 1, 4, 0, 8, 0, 0, 0]
-        # self.network[5] = [2, 0, 5, 9, 8, 0, 0, 0, 3]
-        # self.network[6] = [5, 3, 0, 4, 0, 0, 0, 0, 0]
-        # self.network[7] = [0, 0, 6, 3, 0, 0, 0, 0, 0]
-        # self.network[8] = [4, 0, 1, 2, 0, 3, 0, 0, 0]
-
+        # self.network[0] = [0, 1, 0, 0, 0, 1]
+        # self.network[1] = [1, 0, 1, 0, 0, 0]
+        # self.network[2] = [0, 1, 0, 1, 0, 0]
+        # self.network[3] = [0, 0, 1, 0, 2, 0]
+        # self.network[4] = [0, 0, 0, 2, 0, 1]
+        # self.network[5] = [1, 0, 0, 0, 1, 0]
 
     def print_network(self):
         print("  ", end='')
@@ -59,100 +56,152 @@ class Primary:
         plt.show()
 
     def frr_lfa(self):
-        D_opt_ALT_D= math.inf
-        P_i = {"alt_next_hops": -1, "alt_type": None, "alt_link_protect": False, "alt_node_protect": False} #Primary next hops, default
-        H_i = {"cand_value": -1, "cand_type": "Loop-free", "cand_link_protect": False, "cand_node_protect": False} #Alternate next hops, default
+        D_opt_ALT_D = math.inf
+        P_i = {"alt_next_hops": -1, "alt_type": None, "alt_link_protect": False,
+               "alt_node_protect": False}  # Primary next hops, default
+        H_i = {"cand_value": -1, "cand_type": "Loop-free", "cand_link_protect": False,
+               "cand_node_protect": False}  # Alternate next hops, default
 
         for start in range(self.rows):
-            self.alternate[start] = {}
+            self.lfa_frr_paths[start] = {}
             for destination in range(self.columns):
                 if start == destination:
                     continue
                 next_hop = P_i.copy()
                 try:
-                    D_opt_S_D = self.primary[start][0][destination]    # Ideal distance from start to dest according to Dijkstra
+                    D_opt_S_D = self.primary[start][0][
+                        destination]  # Ideal distance from start to dest according to Dijkstra
                 except KeyError:  # Node is not connected to any other node in the network
                     continue
                 primary_next_hop = self.primary[start][1][destination][1]
-                for alt_next_hop in self.G.neighbors(start): # Looping through each neighbor
+                for alt_next_hop in self.G.neighbors(start):  # Looping through each neighbor
                     if alt_next_hop != primary_next_hop:  # Step 2
-                        D_opt_H_D = self.primary[alt_next_hop][0][destination]  # Ideal distance from neighbor to destination
+                        D_opt_H_D = self.primary[alt_next_hop][0][
+                            destination]  # Ideal distance from neighbor to destination
                         D_opt_H_S = self.primary[alt_next_hop][0][start]  # Distance from neighbor to start
                         if D_opt_H_D < D_opt_H_S + D_opt_S_D:  # Step 4, Step 3 is assumed
                             candidate = H_i.copy()  # Step 5, H_i is loop free by default,
                             candidate["cand_value"] = alt_next_hop
                             if self.network[start][alt_next_hop] + D_opt_H_D == D_opt_S_D:
                                 candidate["cand_type"] = "Primary"  # Step 6
-                            candidate["cand_link_protect"] = True  # Step 7, no shared links, so if-statement always satisfied
+                            candidate[
+                                "cand_link_protect"] = True  # Step 7, no shared links, so if-statement always satisfied
                             D_opt_H_P = self.primary[alt_next_hop][0][primary_next_hop]
                             D_opt_P_D = self.primary[primary_next_hop][0][destination]
                             if D_opt_H_D < D_opt_H_P + D_opt_P_D:
                                 candidate["cand_node_protect"] = True  # Step 8
                             # Step 9 Omitted because SRLG not considered
-                            if candidate["cand_type"] == "Primary" and next_hop["alt_type"] != "Primary": # Step 10
-                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
+                            if candidate["cand_type"] == "Primary" and next_hop["alt_type"] != "Primary":  # Step 10
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))  # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             elif candidate["cand_type"] != "Primary" and next_hop["alt_type"] == "Primary":  # Step 11
                                 continue
-                            if candidate["cand_node_protect"] == True and next_hop["alt_node_protect"] == False: # Step 12
-                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
+                            if candidate["cand_node_protect"] == True and next_hop[
+                                "alt_node_protect"] == False:  # Step 12
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))  # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
-                            if candidate["cand_link_protect"] == True and next_hop["alt_link_protect"] == False:  # Step 13
-                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
+                            if candidate["cand_link_protect"] == True and next_hop[
+                                "alt_link_protect"] == False:  # Step 13
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))  # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             # Step 14 Omitted because SRLG not considered
                             # Step 15 Omitted because SRLG not considered
                             if D_opt_H_D < D_opt_P_D and D_opt_ALT_D >= D_opt_P_D:  # Step 16
-                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))  # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             if D_opt_H_D < D_opt_ALT_D:  # Step 17, if the distance from the candidate to destination is shorter than the alternate next hop, it is being preferred
-                                next_hop = dict(zip(next_hop.keys(), candidate.values()))          # Step 20
+                                next_hop = dict(zip(next_hop.keys(), candidate.values()))  # Step 20
                                 D_opt_ALT_D = D_opt_H_D
                                 continue
                             # Step 18 Continue to next alt_next_hop
                             # Step 19 
-                self.alternate[start][destination]= next_hop
+                self.lfa_frr_paths[start][destination] = next_hop
 
     def ti_lfa(self):
         for start in range(self.rows):
-            self.PQ_spaces[start] = {}
+            self.ti_lfa_paths[start] = {}
             for destination in range(self.columns):
                 if start == destination:
                     continue
-                self.PQ_spaces[start][destination] = []
-                P_space = []
+                self.ti_lfa_paths[start][destination] = []
+                P_space = {}
+                Q_space = {}
                 primary_next_hop = self.primary[start][1][destination][1]
+
+                # calculating the post-convergence path, www.segment-routing.net page 33
+                weight_to_primary = self.G[start][primary_next_hop]['weight']
+                self.G.remove_edge(start, primary_next_hop)
+                post_convergence_path = nx.dijkstra_path(self.G, start, destination)
+                self.G.add_edge(start, primary_next_hop, weight=weight_to_primary)
+
                 distance_to_destination = self.primary[start][0][destination]
                 for node in range(self.columns):
                     path_to_node = self.primary[start][1][node][:2]
-                    if node == start:
+                    if path_to_node != [start, primary_next_hop]:
+                        P_space[node]['link-protect'] = True
+                    else:
                         continue
-                    if path_to_node == [start, primary_next_hop]:
-                        continue
-                    if self.primary[start][0][node] + self.primary[node][0][destination] == distance_to_destination:
-                        continue
-                    # if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(map(str, path_to_node)):
-                    #     continue
-                    P_space.append(node)
-                for node in P_space:
+                    if primary_next_hop not in self.primary[start][1][node]:
+                        P_space[node]['node-protect'] = True
+
+                for node in range(self.columns):
                     path_to_destination = self.primary[node][1][destination]
-                    if ', '.join(map(str, [start, primary_next_hop])) in ', '.join(
+                    if ', '.join(map(str, [start, primary_next_hop])) not in ', '.join(
                             map(str, path_to_destination)):
+                        Q_space[node]['link-protect'] = True
+                    else:
                         continue
-                    self.PQ_spaces[start][destination].append(node)
+                    if primary_next_hop not in path_to_destination:
+                        Q_space[node]['node-protect'] = True
+
+                for node in P_space.keys():
+                    if node in Q_space.keys():
+                        segment = {'node': node, 'along-convergence': False, 'link-protect': False,
+                                   'node-protect': False}
+                        if node in post_convergence_path:
+                            segment['along-convergence'] = True
+                        if P_space[node]['link-protect'] & Q_space[node]['link-protect']:
+                            segment['link-protect'] = True
+                        if P_space[node]['node-protect'] & Q_space[node]['node-protect']:
+                            segment['node-protect'] = True
+                        self.ti_lfa_paths[start][destination].append(segment)
+
+                    # if there is no overlap in the P and Q space, check whether
+                    # P and Q space are adjacent to each other:
+                    if not self.ti_lfa_paths[start][destination]:
+                        segment = {'node': None, 'along-convergence': True, 'link-protect': False,
+                                   'node-protect': False}
+                        last_in_p_space = {}
+                        first_in_q_space = {}
+                        for node in post_convergence_path:
+                            if node in P_space:
+                                last_in_p_space['node'] = node
+                                last_in_p_space.update(P_space[node])
+                                continue
+                            elif node in Q_space:
+                                first_in_q_space['node'] = node
+                                first_in_q_space.update(Q_space[node])
+                                segment['node'] = [last_in_p_space, first_in_q_space]
+                                if last_in_p_space['link-protect'] & first_in_q_space['link-protect']:
+                                    segment['link-protect'] = True
+                                if last_in_p_space['node-protect'] & first_in_q_space['node-protect']:
+                                    segment['node-protect'] = True
+                                self.ti_lfa_paths[start][destination].append(segment)
+                                break
+                            break
 
 
-myNetwork = Primary(size=9)
+myNetwork = Primary(size=6)
 myNetwork.print_network()
 myNetwork.plot_network()
 
 myNetwork.frr_lfa()
 
-for start, alt_next_hops in myNetwork.alternate.items():
+for start, alt_next_hops in myNetwork.lfa_frr_paths.items():
     print(f"########{start}##########")
     for destination, alt_next_hop in alt_next_hops.items():
         print(f"{destination}: {alt_next_hop}")
@@ -162,7 +211,7 @@ for num in range(myNetwork.rows):
 
 myNetwork.ti_lfa()
 
-for start, alt_next_hops in myNetwork.PQ_spaces.items():
+for start, alt_next_hops in myNetwork.ti_lfa_paths.items():
     print(f"########{start}##########")
     for destination, alt_next_hop in alt_next_hops.items():
         print(f"{destination}: {alt_next_hop}")
