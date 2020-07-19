@@ -5,7 +5,7 @@ import math
 import collections
 
 
-class Primary:
+class Network:
     def __init__(self, size, seed):
         self.columns = size
         self.rows = size
@@ -28,7 +28,7 @@ class Primary:
         np.random.seed(self.seed)
         for row in range(rows):
             for column in range(mincolumn, columns):
-                link_weight = np.random.choice([0, np.random.randint(1, 10)], p=[0.5, 0.5])
+                link_weight = np.random.choice([0, np.random.randint(1, 10)], p=[1-5*1/self.columns, 5*1/self.columns])
                 self.network[row, column] = link_weight
                 self.network[column, row] = link_weight
             mincolumn += 1
@@ -50,9 +50,9 @@ class Primary:
 
     def print_results(self, alternate):
         for start, alt_next_hops in alternate.items():
-            print(f"########{start}##########")
+            print(f"########Start: {start}##########")
             for destination, alt_next_hop in alt_next_hops.items():
-                print(f"{destination}: {alt_next_hop}")
+                print(f"destination {destination}: {alt_next_hop}")
 
     def plot_network(self):
         layout = nx.spring_layout(self.G)
@@ -62,6 +62,9 @@ class Primary:
         plt.show()
 
     def plot_results(self, start, destination):
+
+        if self.lfa_frr_paths == {} or self.ti_lfa_paths == {}:
+            return -1
         layout = nx.spring_layout(self.G)
         nx.draw_networkx(self.G, layout, width=0.3)
         labels = nx.get_edge_attributes(self.G, "weight")
@@ -76,9 +79,11 @@ class Primary:
             alternate_route = [start] + self.primary[alternate_next_hop][1][destination]
             lfa_frr_colors = [(start, destination) for start, destination in zip(alternate_route, alternate_route[1:])]
             nx.draw_networkx_edges(self.G, edgelist=lfa_frr_colors, pos=layout, edge_color='r',
-                                   label='LFA FRR', width=3)
-
-        segments = self.ti_lfa_paths[start][destination]
+                                   label='LFA FRR', width=3, alpha=0.6)
+        try:
+            segments = self.ti_lfa_paths[start][destination]
+        except KeyError:
+            segments = []
         for segment in segments:
             if segment['along-convergence']:
                 alternate_route = self.primary[start][1][segment['node'][0]]
@@ -86,14 +91,18 @@ class Primary:
                     alternate_route.append(node)
                 if len(segment['node']) != 1:
                     alternate_route += self.primary[segment['node'][-1]][1][destination]
+                else:
+                    alternate_route.append(destination)
                 ti_lfa_colors = [(start, dest) for start, dest in zip(alternate_route, alternate_route[1:])]
-                print(ti_lfa_colors)
                 nx.draw_networkx_edges(self.G, edgelist=ti_lfa_colors, pos=layout, edge_color='g',
-                                       label='TI LFA', width=3, style='dotted')
+                                       label='TI LFA route', width=3, style='dotted')
+                nx.draw_networkx_nodes(self.G, nodelist=segment['node'], pos=layout, node_color='g',
+                                       label='TI LFA segment', linewidths=1)
                 break
 
         plt.legend()
         nx.draw_networkx_edge_labels(self.G, pos=layout, edge_labels=labels)
+        plt.title(f"Paths from Node {start} to Node {destination}")
         plt.show()
 
 
@@ -165,9 +174,13 @@ class Primary:
 
     def ti_lfa(self):
         for start in range(self.rows):
+            if self.G[start] == {}:
+                continue
             self.ti_lfa_paths[start] = {}
             for destination in range(self.columns):
                 if start == destination:
+                    continue
+                if self.G[destination] == {}:  # destination has no neighbors
                     continue
 
                 primary_next_hop = self.primary[start][1][destination][1]
@@ -189,7 +202,10 @@ class Primary:
                 p_space = collections.defaultdict(dict)
                 q_space = collections.defaultdict(dict)
 
+                #  P-Space
                 for node in range(self.columns):
+                    if self.G[node] == {}:  # node has no neighbors
+                        continue
                     path_to_node = self.primary[start][1][node][:2]
                     if path_to_node != [start, primary_next_hop]:
                         p_space[node]['link-protect'] = True
@@ -198,7 +214,10 @@ class Primary:
                     if primary_next_hop not in self.primary[start][1][node]:
                         p_space[node]['node-protect'] = True
 
+                # Q-Space
                 for node in range(self.columns):
+                    if self.G[node] == {}:  # node has no neighbors
+                        continue
                     path_to_destination = self.primary[node][1][destination]
                     if ', '.join(map(str, [start, primary_next_hop])) not in ', '.join(
                             map(str, path_to_destination)):
@@ -253,7 +272,7 @@ class Primary:
                                 continue
 
 
-myNetwork = Primary(size=6, seed=15)
+myNetwork = Network(size=50, seed=8)
 
 myNetwork.print_network()
 myNetwork.plot_network()
@@ -264,6 +283,6 @@ myNetwork.print_results(myNetwork.lfa_frr_paths)
 myNetwork.ti_lfa()
 myNetwork.print_results(myNetwork.ti_lfa_paths)
 
-myNetwork.plot_results(1,0)
+myNetwork.plot_results(1,3)
 
 
