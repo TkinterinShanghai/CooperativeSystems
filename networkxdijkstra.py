@@ -2,12 +2,15 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import math
+import collections
 
 
 class Primary:
-    def __init__(self, size):
+    def __init__(self, size, seed):
         self.columns = size
         self.rows = size
+
+        self.seed = seed
 
         self.network = np.full((size, size), 0)  # Square Matrix
         self.fill_network(size)
@@ -22,6 +25,7 @@ class Primary:
         columns = size
         rows = size
         mincolumn = 1
+        np.random.seed(self.seed)
         for row in range(rows):
             for column in range(mincolumn, columns):
                 link_weight = np.random.choice([0, np.random.randint(1, 10)], p=[0.5, 0.5])
@@ -44,16 +48,54 @@ class Primary:
             print(i, end=' ')
             print(self.network[i])
 
+    def print_results(self, alternate):
+        for start, alt_next_hops in alternate.items():
+            print(f"########{start}##########")
+            for destination, alt_next_hop in alt_next_hops.items():
+                print(f"{destination}: {alt_next_hop}")
+
     def plot_network(self):
         layout = nx.spring_layout(self.G)
         nx.draw_networkx(self.G, layout, width=0.3)
         labels = nx.get_edge_attributes(self.G, "weight")
-        ### update this:
-        color_changes = (self.network[0][1], self.network[0][2])
-        # print("tuple:", color_changes)
-        # nx.draw_networkx_edges(self.G, edgelist=([color_changes]),pos=layout, edge_color='r')
         nx.draw_networkx_edge_labels(self.G, pos=layout, edge_labels=labels)
         plt.show()
+
+    def plot_results(self, start, destination):
+        layout = nx.spring_layout(self.G)
+        nx.draw_networkx(self.G, layout, width=0.3)
+        labels = nx.get_edge_attributes(self.G, "weight")
+        primary_route = self.primary[start][1][destination]
+
+        primary_colors = [(start, destination) for start, destination in zip(primary_route, primary_route[1:])]
+        nx.draw_networkx_edges(self.G, edgelist=primary_colors, pos=layout, edge_color='blue',
+                               label='Primary Route', width=3)
+
+        alternate_next_hop = self.lfa_frr_paths[start][destination]['alt_next_hops']
+        if  alternate_next_hop != -1 and self.lfa_frr_paths[start]:
+            alternate_route = [start] + self.primary[alternate_next_hop][1][destination]
+            lfa_frr_colors = [(start, destination) for start, destination in zip(alternate_route, alternate_route[1:])]
+            nx.draw_networkx_edges(self.G, edgelist=lfa_frr_colors, pos=layout, edge_color='r',
+                                   label='LFA FRR', width=3)
+
+        segments = self.ti_lfa_paths[start][destination]
+        for segment in segments:
+            if segment['along-convergence']:
+                alternate_route = self.primary[start][1][segment['node'][0]]
+                for node in segment['node'][1:]:
+                    alternate_route.append(node)
+                if len(segment['node']) != 1:
+                    alternate_route += self.primary[segment['node'][-1]][1][destination]
+                ti_lfa_colors = [(start, dest) for start, dest in zip(alternate_route, alternate_route[1:])]
+                print(ti_lfa_colors)
+                nx.draw_networkx_edges(self.G, edgelist=ti_lfa_colors, pos=layout, edge_color='g',
+                                       label='TI LFA', width=3, style='dotted')
+                break
+
+        plt.legend()
+        nx.draw_networkx_edge_labels(self.G, pos=layout, edge_labels=labels)
+        plt.show()
+
 
     def frr_lfa(self):
         D_opt_ALT_D = math.inf
@@ -127,91 +169,101 @@ class Primary:
             for destination in range(self.columns):
                 if start == destination:
                     continue
-                self.ti_lfa_paths[start][destination] = []
-                P_space = {}
-                Q_space = {}
+
                 primary_next_hop = self.primary[start][1][destination][1]
 
                 # calculating the post-convergence path, www.segment-routing.net page 33
                 weight_to_primary = self.G[start][primary_next_hop]['weight']
                 self.G.remove_edge(start, primary_next_hop)
-                post_convergence_path = nx.dijkstra_path(self.G, start, destination)
+                if self.G[start] == {}:  # no alternate next hops available for selected start
+                    self.G.add_edge(start, primary_next_hop, weight=weight_to_primary)  # origina graph is restored
+                    break
+                try:
+                    post_convergence_path = nx.dijkstra_path(self.G, start, destination)
+                except nx.exception.NetworkXNoPath:
+                    self.G.add_edge(start, primary_next_hop, weight=weight_to_primary)
+                    continue
                 self.G.add_edge(start, primary_next_hop, weight=weight_to_primary)
 
-                distance_to_destination = self.primary[start][0][destination]
+                self.ti_lfa_paths[start][destination] = []
+                p_space = collections.defaultdict(dict)
+                q_space = collections.defaultdict(dict)
+
                 for node in range(self.columns):
                     path_to_node = self.primary[start][1][node][:2]
                     if path_to_node != [start, primary_next_hop]:
-                        P_space[node]['link-protect'] = True
+                        p_space[node]['link-protect'] = True
                     else:
                         continue
                     if primary_next_hop not in self.primary[start][1][node]:
-                        P_space[node]['node-protect'] = True
+                        p_space[node]['node-protect'] = True
 
                 for node in range(self.columns):
                     path_to_destination = self.primary[node][1][destination]
                     if ', '.join(map(str, [start, primary_next_hop])) not in ', '.join(
                             map(str, path_to_destination)):
-                        Q_space[node]['link-protect'] = True
+                        q_space[node]['link-protect'] = True
                     else:
                         continue
                     if primary_next_hop not in path_to_destination:
-                        Q_space[node]['node-protect'] = True
+                        q_space[node]['node-protect'] = True
 
-                for node in P_space.keys():
-                    if node in Q_space.keys():
-                        segment = {'node': node, 'along-convergence': False, 'link-protect': False,
+                for node in p_space.keys():
+                    if node in q_space.keys():
+                        segment = {'node': [node], 'along-convergence': False, 'link-protect': False,
                                    'node-protect': False}
                         if node in post_convergence_path:
                             segment['along-convergence'] = True
-                        if P_space[node]['link-protect'] & Q_space[node]['link-protect']:
+                        if 'link-protect' in p_space[node].keys() and 'link-protect' in q_space[node].keys():
                             segment['link-protect'] = True
-                        if P_space[node]['node-protect'] & Q_space[node]['node-protect']:
+                        if 'node-protect' in p_space[node].keys() and 'node-protect' in q_space[node].keys():
                             segment['node-protect'] = True
-                        self.ti_lfa_paths[start][destination].append(segment)
+                        if segment['node-protect'] or segment['link-protect']:  # path has to be link or node protected
+                            self.ti_lfa_paths[start][destination].append(segment)
 
                     # if there is no overlap in the P and Q space, check whether
-                    # P and Q space are adjacent to each other:
+                    # P and Q space are adjacent to each other or can be connected via pushing segments:
                     if not self.ti_lfa_paths[start][destination]:
                         segment = {'node': None, 'along-convergence': True, 'link-protect': False,
                                    'node-protect': False}
                         last_in_p_space = {}
-                        first_in_q_space = {}
+                        between_q_and_p = []
                         for node in post_convergence_path:
-                            if node in P_space:
-                                last_in_p_space['node'] = node
-                                last_in_p_space.update(P_space[node])
+                            if node in p_space:
+                                last_in_p_space = {'node': node, 'along-convergence': True, 'link-protect': False,
+                                                   'node-protect': False}
+                                last_in_p_space.update(p_space[node])
                                 continue
-                            elif node in Q_space:
-                                first_in_q_space['node'] = node
-                                first_in_q_space.update(Q_space[node])
-                                segment['node'] = [last_in_p_space, first_in_q_space]
-                                if last_in_p_space['link-protect'] & first_in_q_space['link-protect']:
+                            elif node in q_space:  # once the first node in the q space is reached, the loop is over
+                                first_in_q_space = {'node': node, 'along-convergence': True, 'link-protect': False,
+                                                    'node-protect': False}
+                                first_in_q_space.update(q_space[node])
+                                segment['node'] = [last_in_p_space['node'], first_in_q_space['node']]
+                                if between_q_and_p:
+                                    segment['node'].insert(1, between_q_and_p)
+                                if last_in_p_space['link-protect'] and first_in_q_space['link-protect']:
                                     segment['link-protect'] = True
-                                if last_in_p_space['node-protect'] & first_in_q_space['node-protect']:
+                                if last_in_p_space['node-protect'] and first_in_q_space['node-protect']:
                                     segment['node-protect'] = True
-                                self.ti_lfa_paths[start][destination].append(segment)
+                                if segment['node-protect'] or segment['link-protect']:  # path has to be protected
+                                    self.ti_lfa_paths[start][destination].append(segment)
                                 break
-                            break
+                            else:  # q space is not reached yet. the segments inbetween are added to the list
+                                between_q_and_p.append(node)
+                                continue
 
 
-myNetwork = Primary(size=6)
+myNetwork = Primary(size=6, seed=15)
+
 myNetwork.print_network()
 myNetwork.plot_network()
 
 myNetwork.frr_lfa()
-
-for start, alt_next_hops in myNetwork.lfa_frr_paths.items():
-    print(f"########{start}##########")
-    for destination, alt_next_hop in alt_next_hops.items():
-        print(f"{destination}: {alt_next_hop}")
-
-for num in range(myNetwork.rows):
-    print(myNetwork.primary[num])
+myNetwork.print_results(myNetwork.lfa_frr_paths)
 
 myNetwork.ti_lfa()
+myNetwork.print_results(myNetwork.ti_lfa_paths)
 
-for start, alt_next_hops in myNetwork.ti_lfa_paths.items():
-    print(f"########{start}##########")
-    for destination, alt_next_hop in alt_next_hops.items():
-        print(f"{destination}: {alt_next_hop}")
+myNetwork.plot_results(1,0)
+
+
