@@ -80,25 +80,37 @@ class Network:
             lfa_frr_colors = [(start, destination) for start, destination in zip(alternate_route, alternate_route[1:])]
             nx.draw_networkx_edges(self.G, edgelist=lfa_frr_colors, pos=layout, edge_color='r',
                                    label='LFA FRR', width=3, alpha=0.6)
+
         try:
             segments = self.ti_lfa_paths[start][destination]
         except KeyError:
             segments = []
+
+        # if there is a link and node protecting segment that is also along the post convergence path, it is selected
+        # as the chosen alternate. If it doesnt exist, a node protecting segment is chonsen. If it doesnt exist a link
+        # protecting segment is chosen
+        chosen_segment = {}
         for segment in segments:
-            if segment['along-convergence']:
-                alternate_route = self.primary[start][1][segment['node'][0]]
-                for node in segment['node'][1:]:
-                    alternate_route.append(node)
-                if len(segment['node']) != 1:
-                    alternate_route += self.primary[segment['node'][-1]][1][destination]
-                else:
-                    alternate_route.append(destination)
-                ti_lfa_colors = [(start, dest) for start, dest in zip(alternate_route, alternate_route[1:])]
-                nx.draw_networkx_edges(self.G, edgelist=ti_lfa_colors, pos=layout, edge_color='g',
-                                       label='TI LFA route', width=3, style='dotted')
-                nx.draw_networkx_nodes(self.G, nodelist=segment['node'], pos=layout, node_color='g',
-                                       label='TI LFA segment', linewidths=1)
+            if segment['link-protect'] and segment['node-protect'] and segment['along-convergence']:
+                chosen_segment = segment
                 break
+            elif segment['node-protect']:
+                chosen_segment = segment
+        if chosen_segment == {}:
+            chosen_segment = segments[0]
+
+        alternate_route = self.primary[start][1][chosen_segment['node'][0]]
+        for node in chosen_segment['node'][1:]:
+            alternate_route.append(node)
+        if len(chosen_segment['node']) != 1:
+            alternate_route += self.primary[chosen_segment['node'][-1]][1][destination]
+        else:
+            alternate_route.append(destination)
+        ti_lfa_colors = [(start, dest) for start, dest in zip(alternate_route, alternate_route[1:])]
+        nx.draw_networkx_edges(self.G, edgelist=ti_lfa_colors, pos=layout, edge_color='g',
+                               label='TI LFA route', width=3, style='dotted')
+        nx.draw_networkx_nodes(self.G, nodelist=chosen_segment['node'], pos=layout, node_color='g',
+                               label='TI LFA segment', linewidths=1)
 
         plt.legend()
         nx.draw_networkx_edge_labels(self.G, pos=layout, edge_labels=labels)
@@ -272,7 +284,7 @@ class Network:
                                 continue
 
 
-myNetwork = Network(size=50, seed=8)
+myNetwork = Network(size=10, seed=10)
 
 myNetwork.print_network()
 myNetwork.plot_network()
