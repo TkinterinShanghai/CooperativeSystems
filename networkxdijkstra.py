@@ -61,10 +61,7 @@ class Network:
         nx.draw_networkx_edge_labels(self.G, pos=layout, edge_labels=labels)
         plt.show()
 
-    def plot_results(self, start, destination):
-
-        if self.lfa_frr_paths == {} or self.ti_lfa_paths == {}:
-            return -1
+    def plot_results(self, start, destination, savefig=False):
         layout = nx.spring_layout(self.G)
         nx.draw_networkx(self.G, layout, width=0.3)
         labels = nx.get_edge_attributes(self.G, "weight")
@@ -74,38 +71,15 @@ class Network:
         nx.draw_networkx_edges(self.G, edgelist=primary_colors, pos=layout, edge_color='blue',
                                label='Primary Route', width=3)
 
-        alternate_next_hop = self.lfa_frr_paths[start][destination]['alt_next_hops']
-        if  alternate_next_hop != -1 and self.lfa_frr_paths[start]:
-            alternate_route = [start] + self.primary[alternate_next_hop][1][destination]
-            lfa_frr_colors = [(start, destination) for start, destination in zip(alternate_route, alternate_route[1:])]
-            nx.draw_networkx_edges(self.G, edgelist=lfa_frr_colors, pos=layout, edge_color='r',
-                                   label='LFA FRR', width=3, alpha=0.6)
+        lfa_frr_colors = self.choose_frr_lfa(start, destination)
+        nx.draw_networkx_edges(self.G, edgelist=lfa_frr_colors, pos=layout, edge_color='r',
+                               label='LFA FRR', width=3, alpha=0.6)
 
-        try:
-            segments = self.ti_lfa_paths[start][destination]
-        except KeyError:
-            segments = []
-
-        # if there is a link and node protecting segment that is also along the post convergence path, it is selected
-        # as the chosen alternate. If it doesnt exist, a node protecting segment is chonsen. If it doesnt exist a link
-        # protecting segment is chosen
-        chosen_segment = {}
-        for segment in segments:
-            if segment['link-protect'] and segment['node-protect'] and segment['along-convergence']:
-                chosen_segment = segment
-                break
-            elif segment['node-protect']:
-                chosen_segment = segment
-        if chosen_segment == {}:
-            chosen_segment = segments[0]
-
+        chosen_segment = self.choose_ti_lfa(start, destination)
         alternate_route = self.primary[start][1][chosen_segment['node'][0]]
         for node in chosen_segment['node'][1:]:
             alternate_route.append(node)
-        if len(chosen_segment['node']) != 1:
-            alternate_route += self.primary[chosen_segment['node'][-1]][1][destination]
-        else:
-            alternate_route.append(destination)
+        alternate_route += self.primary[chosen_segment['node'][-1]][1][destination]
         ti_lfa_colors = [(start, dest) for start, dest in zip(alternate_route, alternate_route[1:])]
         nx.draw_networkx_edges(self.G, edgelist=ti_lfa_colors, pos=layout, edge_color='g',
                                label='TI LFA route', width=3, style='dotted')
@@ -115,8 +89,53 @@ class Network:
         plt.legend()
         nx.draw_networkx_edge_labels(self.G, pos=layout, edge_labels=labels)
         plt.title(f"Paths from Node {start} to Node {destination}")
+
+        if savefig:
+            plt.savefig(f"Network_from_{start}_to_{destination}_size_{self.columns}_seed_{self.seed}")
         plt.show()
 
+    def choose_frr_lfa(self, start, destination):
+        alternate_next_hop = self.lfa_frr_paths[start][destination]['alt_next_hops']
+        if alternate_next_hop != -1 and self.lfa_frr_paths[start]:
+            alternate_lfa = [start] + self.primary[alternate_next_hop][1][destination]
+            return [(start, destination) for start, destination in zip(alternate_lfa, alternate_lfa[1:])]
+
+    def choose_ti_lfa(self, start, destination):
+        """if there is a link and node protecting segment that is also along the post convergence path, it is selected
+        as the chosen alternate. If it doesnt exist, a node protecting segment is chosen, that has the shortest path.
+        If it doesnt exist, the link protecting segment with the shortest path is chosen"""
+        chosen_segment = {}
+        try:
+            segments = self.ti_lfa_paths[start][destination]
+        except KeyError:
+            return {}
+        for segment in segments:
+            if segment['link-protect'] and segment['node-protect'] and segment['along-convergence']:
+                chosen_segment = segment
+                break
+        if chosen_segment == {}:
+            chosen_segment = self.calculate_distance_ti_lfa(start, destination, 'node-protect')
+        if chosen_segment == {}:
+            chosen_segment = self.calculate_distance_ti_lfa(start, destination, 'link-protect')
+        return chosen_segment
+
+    def calculate_distance_ti_lfa(self, start, destination, protection):
+        chosen_segment = {}
+        shortest_path = math.inf
+        segments = self.ti_lfa_paths[start][destination]
+        for segment in segments:
+            if segment[protection]:
+                alternate_distance = 0
+                alternate_route = self.primary[start][1][segment['node'][0]]
+                for node in segment['node'][1:]:
+                    alternate_route.append(node)
+                alternate_route += self.primary[segment['node'][-1]][1][destination]
+                for start, dest in zip(alternate_route, alternate_route[1:]):
+                    alternate_distance += self.network[start][dest]
+                if alternate_distance < shortest_path:
+                    chosen_segment = segment
+                    shortest_path = alternate_distance
+        return chosen_segment
 
     def frr_lfa(self):
         D_opt_ALT_D = math.inf
@@ -284,7 +303,7 @@ class Network:
                                 continue
 
 
-myNetwork = Network(size=10, seed=10)
+myNetwork = Network(size=7, seed=21)
 
 myNetwork.print_network()
 myNetwork.plot_network()
@@ -295,6 +314,6 @@ myNetwork.print_results(myNetwork.lfa_frr_paths)
 myNetwork.ti_lfa()
 myNetwork.print_results(myNetwork.ti_lfa_paths)
 
-myNetwork.plot_results(1,3)
+myNetwork.plot_results(1,6, savefig=True)
 
 
